@@ -76,7 +76,7 @@ async def web_search(query: str) -> str:
             query=query,
             max_results=5,
             search_depth="advanced",
-            include_raw_content=True,   # 원문 보존용
+            include_raw_content=False,  # raw_content는 수만 토큰 — content(요약)로 충분
         )
         results = response.get("results", [])
 
@@ -96,7 +96,7 @@ async def web_search(query: str) -> str:
         lines = [f"[Web 검색 결과] 쿼리: {query}\n"]
         for i, r in enumerate(results, 1):
             source = _tavily_result_to_source_record(r, i)
-            content = r.get("raw_content") or r.get("content", "")
+            content = (r.get("content") or "")[:2000]  # 결과당 최대 2000자
             pub_date = _parse_published_date(r.get("published_date"))
             date_str = f" | 작성일: {pub_date[:10]}" if pub_date else ""
             lines.append(

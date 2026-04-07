@@ -4,6 +4,7 @@ Phase 1 market workflow state schema.
 
 from __future__ import annotations
 
+import operator
 from typing import Annotated, Literal, TypedDict
 
 from schemas.market_agent_io import MarketAgentOutput
@@ -46,6 +47,7 @@ class Phase1State(TypedDict, total=False):
     review_1_decision: Literal["approve", "redo"]
     review_1_feedback: str
     error_log: Annotated[list[dict], _append_errors]
+    collected_sources: Annotated[list[dict], operator.add]
 
 
 _IMMUTABLE = frozenset(Phase1Input.__annotations__.keys())

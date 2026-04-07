@@ -92,6 +92,7 @@ class StrategyAgentInput(TypedDict):
     OrchestratorState와 격리된 독립 State로 동작한다.
     """
     company:         Literal["SKON", "CATL"]
+    user_request:    str
     market_context:  MarketContext
     review_feedback: str
     retry_count:     int
