@@ -222,24 +222,3 @@ def make_catl_rag_tool():
         )
         return _format_rag_result(result)
     return agentic_rag_catl
-
-
-def make_market_rag_tool():
-    @tool
-    async def agentic_rag_market(query: str) -> str:
-        """
-        배터리 시장 분석 관련 내부 PDF 문서에서 정보를 검색합니다.
-        시장 성장률, 점유율, 기술 트렌드, 규제 현황 등 시장 배경 조사 시 우선 사용하세요.
-        web_search보다 먼저 호출하고, 결과가 부족할 때 web_search로 보완하세요.
-        """
-        logger.tool_call("agentic_rag_market", query=query)
-        result = await _get_market_rag().run(query)
-        logger.tool_result(
-            "agentic_rag_market",
-            success=bool(result.documents),
-            metadata={"rewrite_count": result.rewrite_count,
-                      "forced_return": result.forced_return,
-                      "doc_count": len(result.documents)},
-        )
-        return _format_rag_result(result)
-    return agentic_rag_market

@@ -59,20 +59,6 @@ def load_index(config: RAGConfig, project_root: Path, collection_name: str) -> F
     )
 
 
-def similarity_search(
-    *,
-    collection_name: str,
-    question: str,
-    config: RAGConfig,
-    project_root: Path,
-    k: int | None = None,
-) -> list[Document]:
-    """Run a similarity search on one collection."""
-
-    vectorstore = load_index(config, project_root, collection_name)
-    return vectorstore.similarity_search(question, k=k or config.search_k)
-
-
 def _build_and_save_single_index(
     *,
     documents: list[Document],
