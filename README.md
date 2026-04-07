@@ -88,44 +88,83 @@ pytest -v
 ## Architecture
 
 ```
-사용자 요청
-    │
-    ▼
-┌─────────────────┐
-│   Market Agent  │  Agentic RAG (배터리 시장 리포트, 산업 분석 보고서)
-│  + web_search   │  → MarketContext 출력
-└────────┬────────┘
-         │
-    Human Review #1 (충분성 · 조사 범위 조정)
-         │ 승인
-         ▼
-┌──────────────────────┐
-│ Central Orchestrator │  Fan-out (병렬, 최대 2회 재실행)
-└──────┬───────────────┘
-       │                    │
-       ▼                    ▼
-┌────────────────┐  ┌────────────────┐
-│ SKON Strategy  │  │ CATL Strategy  │  각각 Agentic RAG + web_search
-│     Agent      │  │     Agent      │  (SK On IR 자료 / CATL Annual Report)
-└───────┬────────┘  └────────┬───────┘
-        │                    │
-        └──────────┬─────────┘
-                   │ Fan-in
-         Human Review #2 (충분성 · 비교 축 확인)
-                   │ 승인
-                   ▼
-     ┌──────────────────────────┐
-     │ Comparative SWOT Agent   │  RAG 미적용, 수집 결과만 사용
-     └────────────┬─────────────┘
-                  ▼
-     ┌──────────────────────────┐
-     │      Report Agent        │  최종 보고서 생성
-     └────────────┬─────────────┘
-                  │
-         Human Review #3 (객관성 · 보고서 내용 확인)
-                  │ 승인
-                  ▼
-       배터리 시장 전략 분석 보고서
+<div id="diagram" style="padding:1rem 0"></div>
+<script type="module">
+import mermaid from 'https://esm.sh/mermaid@11/dist/mermaid.esm.min.mjs';
+const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+await document.fonts.ready;
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'base',
+  flowchart: { curve: 'basis', padding: 20 },
+  themeVariables: {
+    darkMode: dark,
+    fontSize: '13px',
+    fontFamily: '"Anthropic Sans", sans-serif',
+    lineColor:        dark ? '#9c9a92' : '#73726c',
+    textColor:        dark ? '#c2c0b6' : '#3d3d3a',
+    primaryColor:     dark ? '#085041' : '#E1F5EE',
+    primaryTextColor: dark ? '#9FE1CB' : '#085041',
+    primaryBorderColor: dark ? '#1D9E75' : '#0F6E56',
+    secondaryColor:     dark ? '#3C3489' : '#EEEDFE',
+    tertiaryColor:      dark ? '#712B13' : '#FAECE7',
+    edgeLabelBackground: dark ? '#2C2C2A' : '#F1EFE8',
+    clusterBkg:          dark ? '#1a1a18' : '#fafaf8',
+    clusterBorder:       dark ? '#444441' : '#D3D1C7',
+  },
+});
+const src = `flowchart TD
+    USER([사용자 요청])
+
+    subgraph PHASE1["Phase 1 — 시장 분석"]
+        MA["Market Agent\\nAgentic RAG + web_search"]
+        HR1{{"Human Review #1\\n충분성 · 조사 범위 조정"}}
+    end
+
+    subgraph PHASE2["Phase 2 — 전략 분석"]
+        CO["Central Orchestrator\\n피드백 반영 · 실행 제어 · 결과 병합"]
+        subgraph PARALLEL["Fan-out (병렬 · 최대 2회)"]
+            SA["SKON Strategy Agent\\nAgentic RAG + web_search"]
+            CA["CATL Strategy Agent\\nAgentic RAG + web_search"]
+        end
+        HR2{{"Human Review #2\\n충분성 · 비교 축 확인"}}
+    end
+
+    subgraph PHASE3["Phase 3 — 보고서 생성"]
+        SW["Comparative SWOT Agent\\nRAG 미적용 · 수집 결과만 사용"]
+        RA["Report Agent\\nSummary · SWOT · 시사점 · Ref"]
+        HR3{{"Human Review #3\\n객관성 · 보고서 내용 확인"}}
+    end
+
+    RESULT([배터리 시장 전략 분석 보고서])
+
+    USER --> MA
+    MA --> HR1
+    HR1 -->|승인| CO
+    HR1 -.->|재조사| MA
+
+    CO --> SA & CA
+    SA & CA --> HR2
+    HR2 -->|승인| SW
+    HR2 -.->|재조사| CO
+
+    SW --> RA
+    RA --> HR3
+    HR3 -->|승인| RESULT
+    HR3 -.->|수정| SW
+
+    classDef agent  fill:#E1F5EE,stroke:#0F6E56,color:#085041
+    classDef review fill:#EEEDFE,stroke:#534AB7,color:#3C3489
+    classDef output fill:#F1EFE8,stroke:#5F5E5A,color:#444441
+    classDef orch   fill:#FAECE7,stroke:#993C1D,color:#712B13
+
+    class MA,SA,CA,SW,RA agent
+    class HR1,HR2,HR3 review
+    class USER,RESULT output
+    class CO orch`;
+const { svg } = await mermaid.render('m-svg', src);
+document.getElementById('diagram').innerHTML = svg;
+</script>
 ```
 
 ## Report Structure
