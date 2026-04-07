@@ -3,22 +3,23 @@ RAG Pipeline 모듈.
 
 구조:
   RAGPipeline.run(query) →
-    1. bge-m3 임베딩 (동기, run_in_executor로 비동기 래핑)
-    2. FAISS 검색 (동기, run_in_executor)
+    1. bge-m3 임베딩 — HuggingFaceEmbeddings.embed_query() 사용
+       (동기 blocking → run_in_executor로 비동기 래핑)
+    2. FAISS 검색 (동기 → run_in_executor)
     3. 관련성 평가 (cosine similarity >= threshold)
     4. 미달 시 gpt-4o-mini로 쿼리 재작성 → 재검색
     5. max_rewrites 초과 시 최선 결과로 강제 반환
 
-전역 초기화:
-  모듈 import 시점에 FAISS 인덱스 + 임베딩 모델을 로드.
-  Agent 진입 시점 latency 제거.
+embedder 인터페이스:
+  HuggingFaceEmbeddings (langchain-huggingface)
+    - embed_query(text: str) -> list[float]
+    - encode_kwargs={"normalize_embeddings": True} 로 초기화 시
+      반환 벡터가 이미 L2 정규화된 상태 → 별도 정규화 불필요
 """
 
 from __future__ import annotations
 import asyncio
-import os
-import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import partial
 from typing import Any
@@ -41,24 +42,24 @@ logger = get_logger("rag_pipeline")
 
 @dataclass
 class RAGDocument:
-    doc_id:         str
-    content:        str
-    source_url:     str
-    source_title:   str
-    cosine_score:   float
+    doc_id:       str
+    content:      str
+    source_url:   str
+    source_title: str
+    cosine_score: float
 
 
 @dataclass
 class RAGResult:
-    documents:      list[RAGDocument]
-    query_used:     str
-    rewrite_count:  int
-    forced_return:  bool = False
-    source_type:    SourceType = SourceType.RAG_FAISS
+    documents:     list[RAGDocument]
+    query_used:    str
+    rewrite_count: int
+    forced_return: bool = False
+    source_type:   SourceType = SourceType.RAG_FAISS
 
     def to_source_records(self) -> list[SourceRecord]:
         records = []
-        for i, doc in enumerate(self.documents):
+        for doc in self.documents:
             raw = SourceRecord(
                 source_id=f"rag_{doc.doc_id}",
                 url=doc.source_url,
@@ -68,10 +69,9 @@ class RAGResult:
                 credibility_score=0,
                 credibility_flags={},
             )
-            evaluated = evaluate_source_credibility(
+            records.append(evaluate_source_credibility(
                 raw, rag_cosine_score=doc.cosine_score
-            )
-            records.append(evaluated)
+            ))
         return records
 
 
@@ -82,9 +82,10 @@ class RAGResult:
 class RAGPipeline:
     """
     Args:
-        faiss_index         : faiss.Index 객체 (이미 로드된 상태)
+        faiss_index         : faiss.Index (IndexFlatIP 권장 — 정규화 벡터와 inner product = cosine)
         documents           : [{id, content, url, title}, ...] — 인덱스 순서와 일치
-        embedder            : FlagEmbedding BGEModel 또는 동일 인터페이스
+        embedder            : HuggingFaceEmbeddings 인스턴스
+                              encode_kwargs={"normalize_embeddings": True} 필수
         relevance_threshold : cosine similarity 하한 (기본 0.75)
         max_rewrites        : 쿼리 재작성 최대 횟수 (기본 3)
         top_k               : FAISS 검색 결과 수 (기본 5)
@@ -99,16 +100,16 @@ class RAGPipeline:
         max_rewrites: int = 3,
         top_k: int = 5,
     ):
-        self.index     = faiss_index
-        self.documents = documents
-        self.embedder  = embedder
-        self.threshold = relevance_threshold
+        self.index        = faiss_index
+        self.documents    = documents
+        self.embedder     = embedder
+        self.threshold    = relevance_threshold
         self.max_rewrites = max_rewrites
-        self.top_k     = top_k
+        self.top_k        = top_k
 
         # lazy 초기화 — 실제 호출 시점에 생성 (테스트 시 mock 주입 가능)
-        self._rewrite_llm = None
-        self._rewrite_llm_model = "gpt-4o-mini" 
+        self._rewrite_llm       = None
+        self._rewrite_llm_model = "gpt-4o-mini"
 
     # ── 퍼블릭 API ────────────────────────────
 
@@ -127,15 +128,14 @@ class RAGPipeline:
             )
 
             if scores and max(scores) >= self.threshold:
-                source_type = (
-                    SourceType.RAG_FAISS if rewrite_count == 0
-                    else SourceType.RAG_REWRITTEN
-                )
                 return RAGResult(
                     documents=docs,
                     query_used=current_query,
                     rewrite_count=rewrite_count,
-                    source_type=source_type,
+                    source_type=(
+                        SourceType.RAG_FAISS if rewrite_count == 0
+                        else SourceType.RAG_REWRITTEN
+                    ),
                 )
 
             best_result = RAGResult(
@@ -159,9 +159,7 @@ class RAGPipeline:
             forced_return=True,
         )
         result = best_result or RAGResult(
-            documents=[],
-            query_used=current_query,
-            rewrite_count=rewrite_count,
+            documents=[], query_used=current_query, rewrite_count=rewrite_count,
         )
         result.forced_return = True
         return result
@@ -169,14 +167,20 @@ class RAGPipeline:
     # ── 내부 메서드 ───────────────────────────
 
     async def _embed(self, text: str) -> np.ndarray:
-        """bge-m3는 동기 blocking → run_in_executor로 비동기 래핑."""
+        """
+        HuggingFaceEmbeddings.embed_query()는 동기 blocking.
+        run_in_executor로 비동기 래핑.
+
+        encode_kwargs={"normalize_embeddings": True} 로 초기화했으므로
+        반환 벡터는 이미 L2 정규화된 상태. 별도 정규화 불필요.
+        """
         loop = asyncio.get_event_loop()
-        fn = partial(self.embedder.encode, [text], batch_size=1)
-        result = await loop.run_in_executor(None, fn)
-        vec = np.array(result[0], dtype=np.float32)
-        # L2 정규화 (cosine similarity용)
-        norm = np.linalg.norm(vec)
-        return vec / norm if norm > 0 else vec
+        vec = await loop.run_in_executor(
+            None,
+            self.embedder.embed_query,  # embed_query(text) → list[float]
+            text,
+        )
+        return np.array(vec, dtype=np.float32)
 
     async def _search(self, query: str) -> tuple[list[RAGDocument], list[float]]:
         """FAISS 검색 (동기 blocking → run_in_executor)."""
@@ -192,8 +196,8 @@ class RAGPipeline:
         for dist, idx in zip(distances[0], indices[0]):
             if idx < 0 or idx >= len(self.documents):
                 continue
-            raw = self.documents[idx]
-            cosine = float(dist)    # FAISS IndexFlatIP → inner product = cosine (정규화 후)
+            raw    = self.documents[idx]
+            cosine = float(dist)  # IndexFlatIP + 정규화 벡터 → inner product = cosine
             docs.append(RAGDocument(
                 doc_id=raw.get("id", str(idx)),
                 content=raw["content"],
@@ -207,9 +211,7 @@ class RAGPipeline:
 
     async def _rewrite_query(self, original_query: str, docs: list[RAGDocument]) -> str:
         """관련성 낮은 검색 결과를 참고해 쿼리 재작성."""
-        context_preview = "\n".join(
-            f"- {d.content[:200]}" for d in docs[:3]
-        )
+        context_preview = "\n".join(f"- {d.content[:200]}" for d in docs[:3])
         prompt = (
             f"다음 쿼리로 검색했지만 관련성이 낮은 결과가 나왔습니다.\n"
             f"원본 쿼리: {original_query}\n\n"
@@ -225,3 +227,4 @@ class RAGPipeline:
         logger.llm_call(purpose="rag_query_rewrite", model=self._rewrite_llm_model)
         response = await self._rewrite_llm.ainvoke([HumanMessage(content=prompt)])
         return response.content.strip()
+

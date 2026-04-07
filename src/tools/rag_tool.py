@@ -2,7 +2,7 @@
 RAG Tool 전역 초기화 및 @tool 래핑.
 
 초기화 전략:
-  - faiss, FlagEmbedding은 initialize_rag_pipelines() 내부에서만 import
+  - faiss, HuggingFaceEmbeddings는 initialize_rag_pipelines() 내부에서만 import
   - 테스트에서는 호출하지 않고 make_skon/catl_rag_tool을 mock
   - 애플리케이션 진입점에서 initialize_rag_pipelines() 명시적 호출
 
@@ -14,7 +14,6 @@ RAG Tool 전역 초기화 및 @tool 래핑.
 from __future__ import annotations
 import json
 import os
-from typing import TYPE_CHECKING
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -43,7 +42,11 @@ def _load_documents(path: str) -> list[dict]:
 
 def initialize_rag_pipelines() -> None:
     """
-    FAISS 인덱스 + bge-m3를 로드해 전역 파이프라인 초기화.
+    FAISS 인덱스 + bge-m3 임베딩 모델을 로드해 전역 파이프라인 초기화.
+
+    임베딩:
+      langchain-huggingface의 HuggingFaceEmbeddings 사용.
+      bge-m3 추론 전용 — langchain-huggingface의 HuggingFaceEmbeddings 사용.
 
     호출 시점:
       - 애플리케이션 진입점 (run_test.py, main.py 등)
@@ -54,10 +57,14 @@ def initialize_rag_pipelines() -> None:
     global _SKON_RAG, _CATL_RAG
 
     import faiss
-    from FlagEmbedding import BGEM3FlagModel
+    from langchain_huggingface import HuggingFaceEmbeddings
 
-    logger.node_enter("global_init", {"step": "bge-m3 embedder"})
-    embedder = BGEM3FlagModel("BAAI/bge-m3", use_fp16=True, device="cpu")
+    logger.node_enter("global_init", {"step": "bge-m3 embedder (HuggingFaceEmbeddings)"})
+    embedder = HuggingFaceEmbeddings(
+        model_name="BAAI/bge-m3",
+        model_kwargs={"device": "cpu"},
+        encode_kwargs={"normalize_embeddings": True},
+    )
 
     logger.node_enter("global_init", {"step": "SKON FAISS index"})
     skon_index = faiss.read_index(
@@ -161,3 +168,4 @@ def make_catl_rag_tool():
         )
         return _format_rag_result(result)
     return agentic_rag_catl
+
