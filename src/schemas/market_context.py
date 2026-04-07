@@ -10,13 +10,15 @@ from typing import TypedDict
 # MarketContext 스키마
 # ─────────────────────────────────────────────
 
-class MarketContext(TypedDict):
-    ev_growth_slowdown: dict    # 캐즘 현황 (성장률 둔화 수치, 지역별)
-    market_share_ranking: dict  # 글로벌 배터리 점유율 순위
-    lfp_ncm_trend: dict         # LFP vs NCM 기술 트렌드
-    ess_hev_growth: dict        # ESS/HEV 시장 성장성 수치
-    regulatory_status: dict     # IRA/관세/EU 규제 현황
-    cost_competitiveness: dict  # 원가 경쟁력 트렌드
+class MarketContext(TypedDict, total=False):
+    ev_growth_slowdown: dict    # 캐즘 현황 (성장률 둔화 수치, 지역별, source_ids 포함)
+    market_share_ranking: dict  # 글로벌 배터리 점유율 순위 (source_ids 포함)
+    lfp_ncm_trend: dict         # LFP vs NCM 기술 트렌드 (source_ids 포함)
+    ess_hev_growth: dict        # ESS/HEV 시장 성장성 수치 (source_ids 포함)
+    regulatory_status: dict     # IRA/관세/EU 규제 현황 (source_ids 포함)
+    cost_competitiveness: dict  # 원가 경쟁력 트렌드 (source_ids 포함)
+    source_records: list[dict]  # 원본 source 목록
+    references: list[dict]      # 보고서 작성용 formatted reference 목록
 
 
 # ─────────────────────────────────────────────
@@ -141,4 +143,6 @@ MOCK_MARKET_CONTEXT: MarketContext = {
             "LFP 원가가 NCM 대비 30% 낮아 CATL의 원가 우위 구조적으로 지속"
         ),
     },
+    "source_records": [],
+    "references": [],
 }

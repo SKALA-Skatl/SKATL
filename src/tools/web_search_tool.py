@@ -74,10 +74,15 @@ async def web_search(query: str) -> str:
         for i, r in enumerate(results, 1):
             source = _tavily_result_to_source_record(r, i)
             content = r.get("raw_content") or r.get("content", "")
+            title = r.get("title", "")
+            url = r.get("url", "")
+            retrieved = source["retrieved_at"][:10]
             lines.append(
-                f"[{i}] {r.get('title', '')} "
+                f"[{i}] {title} "
                 f"(신뢰도: {source['credibility_score']})\n"
-                f"출처: {r.get('url', '')}\n"
+                f"출처: {url}\n"
+                f"source_id: {source['source_id']}\n"
+                f"REFERENCE: ({retrieved}). *{title}*. Web, {url}\n"
                 f"{content}\n"
             )
         return "\n".join(lines)

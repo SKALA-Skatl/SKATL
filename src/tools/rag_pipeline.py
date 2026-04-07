@@ -38,6 +38,7 @@ from rag.constants import (
     STRATEGY_HINTS,
     TOPIC_HINTS,
 )
+from rag.source_metadata import resolve_source_metadata
 from schemas.agent_io import SourceRecord, SourceType
 from schemas.confidence import evaluate_source_credibility
 from logging_utils import get_logger
@@ -57,6 +58,8 @@ class RAGDocument:
     source_url:   str
     source_title: str
     cosine_score: float
+    page:         int | None = None
+    reference_text: str = ""
     source:       str = ""   # PDF 파일명 (예: "skon.pdf") — coverage 평가에 사용
 
 
@@ -263,12 +266,20 @@ class RAGPipeline:
             cosine = float(1.0 - (l2_dist ** 2) / 2.0)
             metadata = document.metadata
             source = str(metadata.get("source", ""))
+            chunk_id = str(metadata.get("chunk_id", hash(document.page_content)))
+            resolved = resolve_source_metadata(
+                source_id=chunk_id,
+                source=source,
+                title=str(metadata.get("title", "")),
+            )
             docs.append(RAGDocument(
-                doc_id=str(metadata.get("chunk_id", hash(document.page_content))),
+                doc_id=chunk_id,
                 content=document.page_content,
-                source_url=metadata.get("url", source),
-                source_title=metadata.get("title", source),
+                source_url=str(metadata.get("url", "")) or resolved["url"] or source,
+                source_title=str(metadata.get("title", "")) or resolved["title"] or source,
                 cosine_score=cosine,
+                page=metadata.get("page"),
+                reference_text=str(metadata.get("reference_text", "")) or resolved["reference_text"],
                 source=source,
             ))
             scores.append(cosine)
