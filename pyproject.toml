@@ -18,3 +18,10 @@ dependencies = [
     "sentence-transformers>=5.3.0",
     "tavily-python>=0.7.23",
 ]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath   = ["src"]
