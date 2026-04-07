@@ -34,6 +34,16 @@ from schemas.market_context import (
     MarketContext,
     MOCK_MARKET_CONTEXT,
 )
+from schemas.market_agent_io import (
+    MarketAgentInput,
+    MarketAgentOutput,
+)
+from schemas.phase1_state import (
+    Phase1Input,
+    Phase1Output,
+    Phase1State,
+    assert_phase1_immutable_fields,
+)
 
 __all__ = [
     # state
@@ -59,4 +69,10 @@ __all__ = [
     # market_context
     "MarketContext",
     "MOCK_MARKET_CONTEXT",
+    "MarketAgentInput",
+    "MarketAgentOutput",
+    "Phase1Input",
+    "Phase1Output",
+    "Phase1State",
+    "assert_phase1_immutable_fields",
 ]

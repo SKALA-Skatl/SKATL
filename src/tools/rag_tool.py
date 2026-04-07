@@ -5,7 +5,8 @@ RAG Tool 전역 초기화 및 @tool 래핑.
   - src/rag/vectorstore.load_index() 로 LangChain FAISS 인덱스 로드
     → src/rag/vectorstore.build_and_save_indices() 로 빌드한 인덱스와 포맷 일치
   - 인덱스 경로: {INDEX_DIR}/{collection_name}/  (LangChain FAISS 폴더 구조)
-  - 테스트에서는 initialize_rag_pipelines() 호출 않고 make_skon/catl_rag_tool을 mock
+  - market/skon/catl 컬렉션을 전역 파이프라인으로 올려 재사용
+  - 테스트에서는 initialize_rag_pipelines() 호출 않고 tool factory를 mock
 
 환경변수 (.env):
   INDEX_DIR        : 인덱스 루트 폴더 (기본: data/vectorstores)
@@ -40,6 +41,7 @@ _DEFAULT_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 _SKON_RAG: RAGPipeline | None = None
 _CATL_RAG: RAGPipeline | None = None
+_MARKET_RAG: RAGPipeline | None = None
 
 
 def initialize_rag_pipelines() -> None:
@@ -47,6 +49,7 @@ def initialize_rag_pipelines() -> None:
     LangChain FAISS 인덱스를 로드해 전역 파이프라인 초기화.
 
     인덱스 위치:
+      {INDEX_DIR}/market_agent/ ← market_agent 컬렉션
       {INDEX_DIR}/skon_agent/   ← skon_agent 컬렉션
       {INDEX_DIR}/catl_agent/   ← catl_agent 컬렉션
 
@@ -57,13 +60,16 @@ def initialize_rag_pipelines() -> None:
       - 애플리케이션 진입점 (run_test.py, main.py 등)
       - Phase 1 진행 중 백그라운드에서 호출해 latency 제거
 
-    테스트에서는 호출하지 않음 — make_skon/catl_rag_tool을 직접 mock.
+    테스트에서는 호출하지 않음 — 각 tool factory를 직접 mock.
     """
-    global _SKON_RAG, _CATL_RAG
+    global _SKON_RAG, _CATL_RAG, _MARKET_RAG
 
     project_root = Path(os.environ.get("PROJECT_ROOT", str(_DEFAULT_PROJECT_ROOT)))
     index_dir    = Path(os.environ.get("INDEX_DIR", "data/vectorstores"))
     config       = RAGConfig(index_dir=index_dir)
+
+    logger.node_enter("global_init", {"step": "market_agent FAISS index"})
+    market_vs = load_index(config, project_root, "market_agent")
 
     logger.node_enter("global_init", {"step": "skon_agent FAISS index"})
     skon_vs = load_index(config, project_root, "skon_agent")
@@ -71,11 +77,21 @@ def initialize_rag_pipelines() -> None:
     logger.node_enter("global_init", {"step": "catl_agent FAISS index"})
     catl_vs = load_index(config, project_root, "catl_agent")
 
+    _MARKET_RAG = RAGPipeline(vectorstore=market_vs, collection_name="market_agent")
     _SKON_RAG = RAGPipeline(vectorstore=skon_vs, collection_name="skon_agent")
     _CATL_RAG = RAGPipeline(vectorstore=catl_vs, collection_name="catl_agent")
 
     logger.node_exit("global_init", duration_sec=0, status="ok",
-                     metadata={"loaded": ["skon_agent", "catl_agent"]})
+                     metadata={"loaded": ["market_agent", "skon_agent", "catl_agent"]})
+
+
+def _get_market_rag() -> RAGPipeline:
+    if _MARKET_RAG is None:
+        raise RuntimeError(
+            "Market RAG pipeline이 초기화되지 않았습니다. "
+            "initialize_rag_pipelines()를 먼저 호출하세요."
+        )
+    return _MARKET_RAG
 
 
 def _get_skon_rag() -> RAGPipeline:
@@ -101,6 +117,8 @@ def _get_catl_rag() -> RAGPipeline:
 # ─────────────────────────────────────────────
 
 def _format_rag_result(result: RAGResult) -> str:
+    """Render RAG hits in a source-aware text format."""
+
     if not result.documents:
         return "관련 문서를 찾지 못했습니다."
     lines = [
@@ -109,10 +127,19 @@ def _format_rag_result(result: RAGResult) -> str:
         + (", 강제 반환" if result.forced_return else "") + ")\n"
     ]
     for i, doc in enumerate(result.documents, 1):
-        lines.append(
-            f"[{i}] {doc.source_title} (관련성: {doc.cosine_score:.3f})\n"
+        block = (
+            f"[{i}] source_id: rag_{doc.doc_id}\n"
+            f"title: {doc.source_title}\n"
+            f"page: {doc.page}\n"
+            f"source_type: {result.source_type.value}\n"
+            f"관련성: {doc.cosine_score:.3f}\n"
             f"출처: {doc.source_url}\n"
-            f"{doc.content}\n"
+        )
+        if doc.reference_text:
+            block += f"REFERENCE: {doc.reference_text}\n"
+        block += f"{doc.content}\n"
+        lines.append(
+            block
         )
     return "\n".join(lines)
 
@@ -136,6 +163,27 @@ def make_skon_rag_tool():
         )
         return _format_rag_result(result)
     return agentic_rag_skon
+
+
+def make_market_rag_tool():
+    @tool
+    async def market_agent_rag(query: str) -> str:
+        """
+        시장 리포트 PDF에서 정보를 검색합니다.
+        EV 성장률, 점유율, 기술 트렌드, 규제, 원가, ESS/HEV 전망 조회에 우선 사용하세요.
+        web_search보다 먼저 호출하고, 결과가 부족할 때 web_search로 보완하세요.
+        """
+        logger.tool_call("market_agent_rag", query=query)
+        result = await _get_market_rag().run(query)
+        logger.tool_result(
+            "market_agent_rag",
+            success=bool(result.documents),
+            metadata={"rewrite_count": result.rewrite_count,
+                      "forced_return": result.forced_return,
+                      "doc_count": len(result.documents)},
+        )
+        return _format_rag_result(result)
+    return market_agent_rag
 
 
 def make_catl_rag_tool():

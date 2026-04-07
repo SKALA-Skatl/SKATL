@@ -11,9 +11,11 @@ from prompts.strategy_prompt import (
     COMPANY_PROMPTS,
     CompanyPromptConfig,
 )
+from prompts.market_prompt import build_market_system_prompt
 
 __all__ = [
     "build_system_prompt",
+    "build_market_system_prompt",
     "COMPANY_PROMPTS",
     "CompanyPromptConfig",
 ]

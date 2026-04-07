@@ -12,7 +12,13 @@ COMPANY_SOURCE_BY_COLLECTION = {
 
 # 질문 확장에 쓰는 힌트들입니다.
 ENTITY_HINTS = {
-    "market_agent": ["global EV market", "battery market outlook", "전기차 시장", "배터리 시장"],
+    "market_agent": [
+        "global EV market", "battery market outlook", "전기차 시장", "배터리 시장",
+        "EV chasm", "전기차 캐즘", "EV growth slowdown",
+        "battery market share", "배터리 점유율",
+        "LFP NCM trend", "ESS market growth", "IRA regulation",
+        "battery price decline", "배터리 가격 하락",
+    ],
     "skon_agent": ["SK On", "SK온", "SK이노베이션 배터리"],
     "catl_agent": ["CATL", "宁德时代", "Contemporary Amperex Technology"],
     "swot_agent": ["SK On", "CATL", "comparative SWOT", "비교 SWOT"],
@@ -27,6 +33,12 @@ TOPIC_HINTS = {
     "전략": ["전략", "투자", "고객", "수주", "competitive advantage", "strategy"],
     "시장": ["시장 전망", "수요", "정책", "EV adoption", "market outlook"],
     "비교": ["comparative SWOT", "강점", "약점", "opportunity", "threat"],
+    "캐즘": ["EV chasm", "전기차 캐즘", "EV growth slowdown", "성장률 둔화", "수요 정체"],
+    "규제": ["IRA", "관세", "tariff", "EU battery regulation", "배터리 규제", "세액공제"],
+    "가격": ["배터리 가격", "battery price", "원가", "cost per kWh", "LFP 원가", "NCM 원가"],
+    "점유율": ["market share", "배터리 점유율", "CATL BYD", "SNE Research", "글로벌 순위"],
+    "ESS": ["ESS market", "energy storage", "에너지 저장", "grid storage", "재생에너지"],
+    "HEV": ["hybrid vehicle", "HEV 수요", "하이브리드", "PHEV market"],
 }
 
 # 검색 점수와 coverage 판단에 쓰는 키워드입니다.
