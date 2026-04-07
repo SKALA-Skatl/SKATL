@@ -60,8 +60,13 @@ def evaluate_source_credibility(
 
     # 1. 최신성
     try:
-        retrieved = datetime.fromisoformat(source.get("published_date") or source.get("retrieved_at"))
-        months_ago = (datetime.now(timezone.utc) - retrieved).days / 30
+        date_str = source.get("published_date") or source.get("retrieved_at")
+        if not date_str:
+            raise ValueError("날짜 없음")
+        date = datetime.fromisoformat(date_str)
+        if date.tzinfo is None:
+            date = date.replace(tzinfo=timezone.utc)
+        months_ago = (datetime.now(timezone.utc) - date).days / 30
         flags["recency"] = 1 if months_ago <= RECENCY_MONTHS else 0
     except (ValueError, KeyError):
         flags["recency"] = 0

@@ -25,12 +25,31 @@ logger = get_logger("web_search_tool")
 _TAVILY_CLIENT = None  # lazy 초기화 — web_search 첫 호출 시 생성
 
 
+def _parse_published_date(raw: str | None) -> str | None:
+    """Tavily published_date를 ISO 8601로 정규화. 실패 시 None."""
+    if not raw:
+        return None
+    for fmt in ("%Y-%m-%d", "%B %d, %Y", "%b %d, %Y", "%Y-%m-%dT%H:%M:%SZ"):
+        try:
+            from datetime import datetime as _dt
+            dt = _dt.strptime(raw.strip(), fmt)
+            return dt.replace(tzinfo=timezone.utc).isoformat()
+        except ValueError:
+            continue
+    try:
+        dt = datetime.fromisoformat(raw.strip().rstrip("Z"))
+        return dt.replace(tzinfo=timezone.utc).isoformat()
+    except ValueError:
+        return None
+
 def _tavily_result_to_source_record(result: dict, idx: int) -> SourceRecord:
+    published_date = _parse_published_date(result.get("published_date"))
     raw = SourceRecord(
         source_id=f"web_{idx:03d}",
         url=result.get("url", ""),
         title=result.get("title", ""),
         retrieved_at=datetime.now(timezone.utc).isoformat(),
+        published_date=published_date,
         source_type=SourceType.WEB,
         credibility_score=0,
         credibility_flags={},
@@ -61,10 +80,14 @@ async def web_search(query: str) -> str:
         )
         results = response.get("results", [])
 
+        published_dates = [r.get("published_date") for r in results if r.get("published_date")]
         logger.tool_result(
             "web_search",
             success=bool(results),
-            metadata={"result_count": len(results)},
+            metadata={
+                "result_count": len(results),
+                "published_dates": published_dates,
+            },
         )
 
         if not results:
@@ -74,15 +97,12 @@ async def web_search(query: str) -> str:
         for i, r in enumerate(results, 1):
             source = _tavily_result_to_source_record(r, i)
             content = r.get("raw_content") or r.get("content", "")
-            title = r.get("title", "")
-            url = r.get("url", "")
-            retrieved = source["retrieved_at"][:10]
+            pub_date = _parse_published_date(r.get("published_date"))
+            date_str = f" | 작성일: {pub_date[:10]}" if pub_date else ""
             lines.append(
-                f"[{i}] {title} "
-                f"(신뢰도: {source['credibility_score']})\n"
-                f"출처: {url}\n"
-                f"source_id: {source['source_id']}\n"
-                f"REFERENCE: ({retrieved}). *{title}*. Web, {url}\n"
+                f"[{i}] {r.get('title', '')} "
+                f"(신뢰도: {source['credibility_score']}{date_str})\n"
+                f"출처: {r.get('url', '')}\n"
                 f"{content}\n"
             )
         return "\n".join(lines)

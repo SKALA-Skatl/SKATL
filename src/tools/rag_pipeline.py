@@ -61,6 +61,7 @@ class RAGDocument:
     page:         int | None = None
     reference_text: str = ""
     source:       str = ""   # PDF 파일명 (예: "skon.pdf") — coverage 평가에 사용
+    published_date: str | None = None
 
 
 @dataclass
@@ -79,6 +80,7 @@ class RAGResult:
                 url=doc.source_url,
                 title=doc.source_title,
                 retrieved_at=datetime.now(timezone.utc).isoformat(),
+                published_date=doc.published_date,
                 source_type=self.source_type,
                 credibility_score=0,
                 credibility_flags={},
@@ -281,6 +283,7 @@ class RAGPipeline:
                 page=metadata.get("page"),
                 reference_text=str(metadata.get("reference_text", "")) or resolved["reference_text"],
                 source=source,
+                published_date=metadata.get("published_date"),
             ))
             scores.append(cosine)
 

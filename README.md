@@ -143,8 +143,3 @@ pytest tests/ -v
 ```
 
 ## Contributors
-
-- **김지온** : Comparative SWOT Agent, Report Agent, 보고서 목차 설계
-- **서제임스** : Central Orchestrator, Strategy Agent, RAG Pipeline, 테스트
-- **이동민** : Market Agent, Agentic RAG 서브그래프, FAISS 인덱스 구축
-- **장아현** : Human Review HITL 설계, 프롬프트 엔지니어링, 신뢰도 평가 로직
