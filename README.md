@@ -87,8 +87,46 @@ pytest -v
 
 ## Architecture
 
-```
-<img src="./battery_strategy_mermaid.html" width="600" alt="Architecture Diagram"/>
+```mermaid
+flowchart TD
+    USER([사용자 요청])
+
+    subgraph PHASE1["Phase 1 — 시장 분석"]
+        MA["Market Agent\nAgentic RAG + web_search"]
+        HR1{{"Human Review #1\n충분성 · 조사 범위 조정"}}
+    end
+
+    subgraph PHASE2["Phase 2 — 전략 분석"]
+        CO["Central Orchestrator\n피드백 반영 · 실행 제어 · 결과 병합"]
+        subgraph PARALLEL["Fan-out (병렬 · 최대 2회)"]
+            SA["SKON Strategy Agent\nAgentic RAG + web_search"]
+            CA["CATL Strategy Agent\nAgentic RAG + web_search"]
+        end
+        HR2{{"Human Review #2\n충분성 · 비교 축 확인"}}
+    end
+
+    subgraph PHASE3["Phase 3 — 보고서 생성"]
+        SW["Comparative SWOT Agent\nRAG 미적용 · 수집 결과만 사용"]
+        RA["Report Agent\nSummary · SWOT · 시사점 · Ref"]
+        HR3{{"Human Review #3\n객관성 · 보고서 내용 확인"}}
+    end
+
+    RESULT([배터리 시장 전략 분석 보고서])
+
+    USER --> MA
+    MA --> HR1
+    HR1 -->|승인| CO
+    HR1 -.->|재조사| MA
+
+    CO --> SA & CA
+    SA & CA --> HR2
+    HR2 -->|승인| SW
+    HR2 -.->|재조사| CO
+
+    SW --> RA
+    RA --> HR3
+    HR3 -->|승인| RESULT
+    HR3 -.->|수정| RA
 ```
 
 ## Report Structure
