@@ -33,7 +33,7 @@ from typing import Dict, List, Literal, TypedDict
 from docx import Document
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import RGBColor
+from docx.shared import Pt, RGBColor
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
@@ -139,7 +139,7 @@ class FinalReportOutput(BaseModel):
     catl_section: CompanySection = Field(description="CATL이 시장 변화에 어떻게 대응하고 있는지 보여주는 포트폴리오 다각화 및 핵심 경쟁력")
     comparative_swot_focus_points: List[str] = Field(description="시장 변화 대응 관점에서 본 SWOT 비교 기준 및 주목 포인트")
     comparative_swot_company_comparison: List[str] = Field(description="같은 시장 변화에 대한 SK On과 CATL의 대응 차이를 보여주는 S/W/O/T 별 기업 비교")
-    integrated_implications: List[str] = Field(description="어느 기업이 어떤 조건에서 더 유리한지와 우위가 뒤집힐 조건을 포함한 종합 시사점")
+    integrated_implications: List[str] = Field(description="현재 우위 기업, 우위가 뒤집힐 조건, SK On 우선 과제, CATL 리스크 모니터링 포인트, 의사결정자가 볼 핵심 신호를 포함한 종합 시사점")
     references: List[str] = Field(description="실제 활용 자료 목록. 지정 형식 준수")
 
 
@@ -279,7 +279,8 @@ def report_agent(state: FinalStageState):
         - Comparative SWOT에서는 swot_focus_points, strategic_interactions, swot_comparison_table을 모두 반영할 것
         - Comparative SWOT은 다음 질문에 답하는 방향이어야 함: 캐즘 대응력, 체급과 점유율, 기술 트렌드 적합성, ESS/HEV 기회 활용, 규제 대응력, 가격 하락 국면 원가 방어력
         - A기업의 강점이 B기업의 위협이나 약점으로 직결되는 전략적 상호작용이 드러나야 함
-        - 종합 시사점은 향후 대응 방향과 우위가 뒤집힐 조건까지 포함할 것
+        - 종합 시사점은 최소 4개 이상 작성할 것
+        - 종합 시사점에는 현재 기준 우위 기업, 우위가 뒤집힐 조건, SK On의 우선 대응 과제, CATL의 핵심 리스크 또는 모니터링 포인트를 포함할 것
         - references는 제공된 형식화된 목록만 사용하고, 실제 활용한 자료만 남길 것
         - 반드시 JSON으로만 답할 것
 
@@ -331,7 +332,8 @@ def report_agent(state: FinalStageState):
 
 # %%
 ACCENT_COLOR = RGBColor(0xFB, 0x77, 0x62)
-SEPARATOR_COLOR = "FB7762"
+SEPARATOR_COLOR = "D9D9D9"
+TITLE_SEPARATOR_COLOR = "FB7762"
 TABLE_HEADER_FILL = "FDE3DE"
 TABLE_FIRST_COL_FILL = "FEF1EE"
 
@@ -358,14 +360,28 @@ def _add_clean_heading(doc: Document, text: str, level: int = 1):
     return paragraph
 
 
-def _add_separator_line(doc: Document, color: str = SEPARATOR_COLOR):
+def _set_run_size(run, size_pt: int):
+    run.font.size = Pt(size_pt)
+
+
+def _add_title(doc: Document, text: str):
+    paragraph = doc.add_paragraph()
+    _remove_numbering(paragraph)
+    run = paragraph.add_run(text)
+    run.bold = True
+    run.font.color.rgb = ACCENT_COLOR
+    _set_run_size(run, 22)
+    return paragraph
+
+
+def _add_separator_line(doc: Document, color: str = SEPARATOR_COLOR, val: str = "single", size: str = "6"):
     paragraph = doc.add_paragraph()
     _remove_numbering(paragraph)
     p_pr = paragraph._p.get_or_add_pPr()
     p_bdr = OxmlElement("w:pBdr")
     bottom = OxmlElement("w:bottom")
-    bottom.set(qn("w:val"), "single")
-    bottom.set(qn("w:sz"), "6")
+    bottom.set(qn("w:val"), val)
+    bottom.set(qn("w:sz"), size)
     bottom.set(qn("w:space"), "1")
     bottom.set(qn("w:color"), color)
     p_bdr.append(bottom)
@@ -378,14 +394,11 @@ def _add_company_section(doc: Document, heading: str, section: Dict):
     _add_bullet_items(doc, section.get("portfolio_diversification", []))
     _add_clean_heading(doc, "핵심 경쟁력", level=3)
     _add_bullet_items(doc, section.get("core_competencies", []))
-    strategy_paragraph = doc.add_paragraph()
-    _remove_numbering(strategy_paragraph)
-    strategy_paragraph.add_run(f"전략 방향: {section.get('strategic_direction', '')}")
+    _add_clean_heading(doc, "전략 방향", level=3)
+    _add_bullet_items(doc, [section.get("strategic_direction", "")])
     watchpoints = section.get("key_watchpoints", [])
     if watchpoints:
-        watchpoints_paragraph = doc.add_paragraph()
-        _remove_numbering(watchpoints_paragraph)
-        watchpoints_paragraph.add_run("Watchpoints")
+        _add_clean_heading(doc, "Watchpoints", level=3)
         _add_bullet_items(doc, watchpoints)
 
 
@@ -419,10 +432,8 @@ def _add_swot_comparison_table(doc: Document, swot: Dict):
 
 def build_word_report(report: Dict, swot: Dict, output_path: Path) -> None:
     doc = Document()
-    title_paragraph = doc.add_paragraph(style="Title")
-    _remove_numbering(title_paragraph)
-    title_run = title_paragraph.add_run(report["title"])
-    title_run.font.color.rgb = ACCENT_COLOR
+    _add_title(doc, report["title"])
+    _add_separator_line(doc, color=TITLE_SEPARATOR_COLOR, val="double", size="10")
 
     _add_clean_heading(doc, "목차", level=1)
     _add_bullet_items(
@@ -573,9 +584,10 @@ def format_human_review_preview(interrupt_data: Dict) -> str:
     lines.extend(["### 핵심 경쟁력"])
     lines.extend([f"  - {item}" for item in report.get("sk_on_section", {}).get("core_competencies", [])])
     lines.extend([
-        f"전략 방향: {report.get('sk_on_section', {}).get('strategic_direction', '')}",
-        "Watchpoints",
+        "### 전략 방향",
     ])
+    lines.extend([f"  - {report.get('sk_on_section', {}).get('strategic_direction', '')}"])
+    lines.extend(["### Watchpoints"])
     lines.extend([f"  - {item}" for item in report.get("sk_on_section", {}).get("key_watchpoints", [])])
     lines.extend([
         "",
@@ -586,9 +598,10 @@ def format_human_review_preview(interrupt_data: Dict) -> str:
     lines.extend(["### 핵심 경쟁력"])
     lines.extend([f"  - {item}" for item in report.get("catl_section", {}).get("core_competencies", [])])
     lines.extend([
-        f"전략 방향: {report.get('catl_section', {}).get('strategic_direction', '')}",
-        "Watchpoints",
+        "### 전략 방향",
     ])
+    lines.extend([f"  - {report.get('catl_section', {}).get('strategic_direction', '')}"])
+    lines.extend(["### Watchpoints"])
     lines.extend([f"  - {item}" for item in report.get("catl_section", {}).get("key_watchpoints", [])])
     lines.extend([
         "",
@@ -666,7 +679,7 @@ def publish_report(state: FinalStageState):
     output_dir = Path("./results")
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    report_path = output_dir / "battery_market_strategy_report_1.docx"
+    report_path = output_dir / "battery_market_strategy_report_3.docx"
     build_word_report(state["report_draft"], state["comparative_swot"], report_path)
 
     return {
@@ -822,4 +835,3 @@ if result and "__interrupt__" in result:
 
 # %% [markdown]
 # 3번째 reject가 발생하면 `final_revision` 모드가 켜지고, Comparative SWOT Agent와 Report Agent를 한 번 더 거친 뒤 자동으로 Word 보고서를 생성합니다.
-
