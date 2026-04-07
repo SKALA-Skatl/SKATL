@@ -97,7 +97,7 @@ def main() -> None:
         return
 
     if args.command == "query":
-        from rag.vectorstore import similarity_search
+        from src.rag.vectorstore import similarity_search
 
         results = similarity_search(
             collection_name=args.collection,
@@ -114,7 +114,7 @@ def main() -> None:
         return
 
     if args.command == "agentic-query":
-        from rag import agentic_similarity_search
+        from src.rag import agentic_similarity_search
 
         result = agentic_similarity_search(
             collection_name=args.collection,

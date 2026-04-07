@@ -60,7 +60,7 @@ def evaluate_source_credibility(
 
     # 1. 최신성
     try:
-        retrieved = datetime.fromisoformat(source["retrieved_at"])
+        retrieved = datetime.fromisoformat(source.get("published_date") or source.get("retrieved_at"))
         months_ago = (datetime.now(timezone.utc) - retrieved).days / 30
         flags["recency"] = 1 if months_ago <= RECENCY_MONTHS else 0
     except (ValueError, KeyError):

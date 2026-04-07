@@ -48,6 +48,7 @@ class SourceRecord(TypedDict):
     url:               str
     title:             str
     retrieved_at:      str    # ISO 8601
+    published_date: str | None # 콘텐츠 작성 날짜 (신규)
     source_type:       SourceType
     credibility_score: int    # 바이너리: 1 (신뢰) or 0 (미달)
     credibility_flags: dict   # {"recency": 1, "source_tier": 1, ...}
