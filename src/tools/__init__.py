@@ -13,7 +13,7 @@ from tools.rag_tool import (
     make_catl_rag_tool,
 )
 from tools.web_search_tool import web_search
-from tools.rag_pipeline import RAGPipeline, RAGResult, RAGDocument
+from tools.rag_pipeline import RAGDocument, RAGPipeline, RAGResult
 
 __all__ = [
     "initialize_rag_pipelines",

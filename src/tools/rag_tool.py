@@ -2,29 +2,36 @@
 RAG Tool 전역 초기화 및 @tool 래핑.
 
 초기화 전략:
-  - faiss, HuggingFaceEmbeddings는 initialize_rag_pipelines() 내부에서만 import
-  - 테스트에서는 호출하지 않고 make_skon/catl_rag_tool을 mock
-  - 애플리케이션 진입점에서 initialize_rag_pipelines() 명시적 호출
+  - src/rag/vectorstore.load_index() 로 LangChain FAISS 인덱스 로드
+    → src/rag/vectorstore.build_and_save_indices() 로 빌드한 인덱스와 포맷 일치
+  - 인덱스 경로: {INDEX_DIR}/{collection_name}/  (LangChain FAISS 폴더 구조)
+  - 테스트에서는 initialize_rag_pipelines() 호출 않고 make_skon/catl_rag_tool을 mock
 
 환경변수 (.env):
-  SKON_FAISS_INDEX_PATH, SKON_DOCS_PATH
-  CATL_FAISS_INDEX_PATH, CATL_DOCS_PATH
+  INDEX_DIR        : 인덱스 루트 폴더 (기본: data/vectorstores)
+  PROJECT_ROOT     : 프로젝트 루트 경로 (기본: rag_tool.py 기준 두 단계 상위)
 """
 
 from __future__ import annotations
-import json
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 load_dotenv()
 
 from langchain_core.tools import tool
 
+from rag.config import RAGConfig
+from rag.vectorstore import load_index
 from tools.rag_pipeline import RAGPipeline, RAGResult
 from logging_utils import get_logger
 
 
 logger = get_logger("rag_tool")
+
+# rag_tool.py 위치: src/tools/rag_tool.py
+# 프로젝트 루트:    src/tools/ → src/ → project_root
+_DEFAULT_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 # ─────────────────────────────────────────────
@@ -35,18 +42,16 @@ _SKON_RAG: RAGPipeline | None = None
 _CATL_RAG: RAGPipeline | None = None
 
 
-def _load_documents(path: str) -> list[dict]:
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
 def initialize_rag_pipelines() -> None:
     """
-    FAISS 인덱스 + bge-m3 임베딩 모델을 로드해 전역 파이프라인 초기화.
+    LangChain FAISS 인덱스를 로드해 전역 파이프라인 초기화.
 
-    임베딩:
-      langchain-huggingface의 HuggingFaceEmbeddings 사용.
-      bge-m3 추론 전용 — langchain-huggingface의 HuggingFaceEmbeddings 사용.
+    인덱스 위치:
+      {INDEX_DIR}/skon_agent/   ← skon_agent 컬렉션
+      {INDEX_DIR}/catl_agent/   ← catl_agent 컬렉션
+
+    빌드 방법 (app.py):
+      python app.py build-indices
 
     호출 시점:
       - 애플리케이션 진입점 (run_test.py, main.py 등)
@@ -56,37 +61,21 @@ def initialize_rag_pipelines() -> None:
     """
     global _SKON_RAG, _CATL_RAG
 
-    import faiss
-    from langchain_huggingface import HuggingFaceEmbeddings
+    project_root = Path(os.environ.get("PROJECT_ROOT", str(_DEFAULT_PROJECT_ROOT)))
+    index_dir    = Path(os.environ.get("INDEX_DIR", "data/vectorstores"))
+    config       = RAGConfig(index_dir=index_dir)
 
-    logger.node_enter("global_init", {"step": "bge-m3 embedder (HuggingFaceEmbeddings)"})
-    embedder = HuggingFaceEmbeddings(
-        model_name="BAAI/bge-m3",
-        model_kwargs={"device": "cpu"},
-        encode_kwargs={"normalize_embeddings": True},
-    )
+    logger.node_enter("global_init", {"step": "skon_agent FAISS index"})
+    skon_vs = load_index(config, project_root, "skon_agent")
 
-    logger.node_enter("global_init", {"step": "SKON FAISS index"})
-    skon_index = faiss.read_index(
-        os.environ.get("SKON_FAISS_INDEX_PATH", "./indices/skon.faiss")
-    )
-    skon_docs = _load_documents(
-        os.environ.get("SKON_DOCS_PATH", "./indices/skon_docs.json")
-    )
+    logger.node_enter("global_init", {"step": "catl_agent FAISS index"})
+    catl_vs = load_index(config, project_root, "catl_agent")
 
-    logger.node_enter("global_init", {"step": "CATL FAISS index"})
-    catl_index = faiss.read_index(
-        os.environ.get("CATL_FAISS_INDEX_PATH", "./indices/catl.faiss")
-    )
-    catl_docs = _load_documents(
-        os.environ.get("CATL_DOCS_PATH", "./indices/catl_docs.json")
-    )
-
-    _SKON_RAG = RAGPipeline(faiss_index=skon_index, documents=skon_docs, embedder=embedder)
-    _CATL_RAG = RAGPipeline(faiss_index=catl_index, documents=catl_docs, embedder=embedder)
+    _SKON_RAG = RAGPipeline(vectorstore=skon_vs, collection_name="skon_agent")
+    _CATL_RAG = RAGPipeline(vectorstore=catl_vs, collection_name="catl_agent")
 
     logger.node_exit("global_init", duration_sec=0, status="ok",
-                     metadata={"loaded": ["bge-m3", "skon_faiss", "catl_faiss"]})
+                     metadata={"loaded": ["skon_agent", "catl_agent"]})
 
 
 def _get_skon_rag() -> RAGPipeline:
@@ -168,4 +157,3 @@ def make_catl_rag_tool():
         )
         return _format_rag_result(result)
     return agentic_rag_catl
-
