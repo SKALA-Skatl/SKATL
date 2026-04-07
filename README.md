@@ -126,7 +126,7 @@ flowchart TD
     SW --> RA
     RA --> HR3
     HR3 -->|승인| RESULT
-    HR3 -.->|수정| RA
+    HR3 -.->|수정| SW
 ```
 
 ## Report Structure
