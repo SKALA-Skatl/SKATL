@@ -8,14 +8,15 @@ import asyncio
 import json
 from datetime import datetime, timezone
 
-from langchain.agents import create_agent
 from langchain_openai import ChatOpenAI
+from langgraph.prebuilt import create_react_agent
 
 from prompts.market_prompt import build_market_system_prompt
 from rag.source_metadata import resolve_source_metadata
 from schemas.agent_io import AgentFailureType, AgentStatus
 from schemas.market_agent_io import MarketAgentInput, MarketAgentOutput
 from tools.rag_tool import make_market_rag_tool
+from tools.tool_source_parser import extract_source_records_from_messages
 from tools.web_search_tool import web_search
 from logging_utils import get_logger
 
@@ -23,6 +24,7 @@ from logging_utils import get_logger
 logger = get_logger("market_agent")
 
 MAX_ITERATIONS = 20  # RAG 6회 + web_search 6회 + 여유
+AGENT_MODEL = "gpt-4o"
 REQUIRED_MARKET_KEYS = [
     "ev_growth_slowdown",
     "market_share_ranking",
@@ -44,11 +46,11 @@ async def run_market_agent(state: MarketAgentInput) -> MarketAgentOutput:
 
         try:
             rag_tool = make_market_rag_tool()
-            llm = ChatOpenAI(model="gpt-4o", temperature=0)
-            agent = create_agent(
+            llm = ChatOpenAI(model=AGENT_MODEL, temperature=0)
+            agent = create_react_agent(
                 model=llm,
                 tools=[rag_tool, web_search],
-                system_prompt=build_market_system_prompt(state),
+                prompt=build_market_system_prompt(state),
             )
 
             result = await agent.ainvoke(
@@ -69,7 +71,9 @@ async def run_market_agent(state: MarketAgentInput) -> MarketAgentOutput:
                 key: parsed.get(key, {})
                 for key in REQUIRED_MARKET_KEYS
             }
-            sources = _normalize_source_records(parsed.get("source_records", []) or parsed.get("sources", []))
+            raw_sources = list(parsed.get("source_records", []) or parsed.get("sources", []))
+            raw_sources.extend(extract_source_records_from_messages(result.get("messages", [])))
+            sources = _normalize_source_records(raw_sources)
             references = _normalize_references(parsed.get("references", []), sources)
             market_context["source_records"] = sources
             market_context["references"] = references
@@ -168,11 +172,11 @@ def _normalize_references(references: list[dict] | list[str], sources: list[dict
             }
         )
 
-    if normalized:
-        return _deduplicate_references(normalized)
-
-    fallback: list[dict] = []
+    # LLM이 선언한 references에 없는 나머지 sources도 병합
+    declared_ids = {item["source_id"] for item in normalized}
     for source_id, source in source_map.items():
+        if source_id in declared_ids:
+            continue
         resolved = resolve_source_metadata(
             source_id=source_id,
             source=str(source.get("source_name", "")),
@@ -184,28 +188,19 @@ def _normalize_references(references: list[dict] | list[str], sources: list[dict
         source_type = str(source.get("source_type", "")).strip()
         reference_text = resolved["reference_text"]
         if reference_text:
-            fallback.append(
-                {
-                    "source_id": source_id,
-                    "formatted_reference": reference_text,
-                }
-            )
-            continue
-        if source_type == "web" and retrieved_at:
-            fallback.append(
-                {
-                    "source_id": source_id,
-                    "formatted_reference": f"{title or 'Web Source'}({retrieved_at[:10]}). *{title or 'Web Source'}*. Web, {url}",
-                }
-            )
+            normalized.append({"source_id": source_id, "formatted_reference": reference_text})
+        elif source_type == "web":
+            normalized.append({
+                "source_id": source_id,
+                "formatted_reference": f"{title or 'Web Source'}({retrieved_at[:10] if retrieved_at else 'n.d.'}). *{title or 'Web Source'}*. Web, {url}",
+            })
         else:
-            fallback.append(
-                {
-                    "source_id": source_id,
-                    "formatted_reference": f"{title or 'Report'}({retrieved_at[:4] if retrieved_at else 'n.d.'}). *{title or 'Report'}*. {url}",
-                }
-            )
-    return _deduplicate_references(fallback)
+            normalized.append({
+                "source_id": source_id,
+                "formatted_reference": f"{title or 'Report'}({retrieved_at[:4] if retrieved_at else 'n.d.'}). *{title or 'Report'}*. {url}",
+            })
+
+    return _deduplicate_references(normalized)
 
 
 def _normalize_source_records(raw_sources: list[dict] | list[str]) -> list[dict]:

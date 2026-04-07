@@ -47,6 +47,21 @@ def initialize_rag_pipelines_with_store(shared_vectorstore) -> None:
     )
 
 
+def initialize_rag_pipelines_with_stores(
+    *,
+    skon_vectorstore=None,
+    catl_vectorstore=None,
+    market_vectorstore=None,
+    shared_vectorstore=None,
+) -> None:
+    """Backward-compatible alias for the old initializer name."""
+
+    store = shared_vectorstore or market_vectorstore or skon_vectorstore or catl_vectorstore
+    if store is None:
+        raise ValueError("At least one vectorstore must be provided.")
+    initialize_rag_pipelines_with_store(store)
+
+
 def initialize_rag_pipelines() -> None:
     """Load the shared FAISS index and initialize all RAG pipelines."""
 

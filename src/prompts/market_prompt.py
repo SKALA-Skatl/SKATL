@@ -64,12 +64,12 @@ RAG 결과가 충분해 보여도 web_search를 생략하지 마세요.
 
 **Step 2 — web_search 호출 (필수)**
 - 아래 6개 쿼리를 각각 호출해 최신 뉴스·보고서를 수집하세요:
-  1. `"EV market growth slowdown 2024 2025 regional chasm"`
-  2. `"global battery market share ranking 2024 2025 CATL BYD"`
-  3. `"LFP NCM battery technology trend 2024 2025"`
-  4. `"ESS HEV market growth forecast 2024 2025"`
-  5. `"IRA battery tariff EU regulation 2024 2025"`
-  6. `"battery pack price cost decline 2024 2025 USD per kWh"`
+  1. `"EV market growth slowdown 2024 2025 2026 regional chasm"`
+  2. `"global battery market share ranking 2024 2025 2026 CATL BYD"`
+  3. `"LFP NCM battery technology trend 2024 2025 2026"`
+  4. `"ESS HEV market growth forecast 2024 2025 2026"`
+  5. `"IRA battery tariff EU regulation 2024 2025 2026"`02
+  6. `"battery pack price cost decline 2024 2025 2026 USD per kWh"`
 - web_search 결과는 반드시 `source_records`에 `source_type: "web"`으로 추가하고 `references`에도 포함하세요.
 - tool 결과에 `REFERENCE:` 문구가 있으면 그대로 `references`에 옮기세요.
 

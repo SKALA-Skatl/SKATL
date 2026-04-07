@@ -20,6 +20,7 @@ Orchestrator State 정의.
 """
 
 from __future__ import annotations
+import operator
 from typing import Annotated, Literal, TypedDict
 
 from schemas.agent_io import StrategyAgentOutput
@@ -102,6 +103,7 @@ class OrchestratorState(TypedDict, total=False):
     # ── 내부 제어 ─────────────────────────────
     fan_in_status: dict
     error_log:     Annotated[list[dict], _append_errors]
+    collected_sources: Annotated[list[dict], operator.add]
 
 
 # ─────────────────────────────────────────────

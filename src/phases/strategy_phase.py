@@ -113,6 +113,7 @@ def orchestrator_fanout(state: OrchestratorState) -> list[Send]:
             "skon_agent_node",
             StrategyAgentInput(
                 company="SKON",
+                user_request=state["user_request"],
                 market_context=state["market_context"],
                 review_feedback=state.get("review_2_feedback", ""),
                 retry_count=skon_retry,
@@ -125,6 +126,7 @@ def orchestrator_fanout(state: OrchestratorState) -> list[Send]:
             "catl_agent_node",
             StrategyAgentInput(
                 company="CATL",
+                user_request=state["user_request"],
                 market_context=state["market_context"],
                 review_feedback=state.get("review_2_feedback", ""),
                 retry_count=catl_retry,
@@ -151,8 +153,9 @@ async def skon_agent_node(state: StrategyAgentInput) -> dict:
         result = _make_failed("SKON", AgentFailureType.LLM_ERROR)
 
     update = {
-        "skon_result":      result,
-        "skon_retry_count": state["retry_count"] + 1,
+        "skon_result":        result,
+        "skon_retry_count":   state["retry_count"] + 1,
+        "collected_sources":  list(result.get("sources") or []),
     }
     assert_immutable_fields(update, "skon_agent_node")
     return update
@@ -170,8 +173,9 @@ async def catl_agent_node(state: StrategyAgentInput) -> dict:
         result = _make_failed("CATL", AgentFailureType.LLM_ERROR)
 
     update = {
-        "catl_result":      result,
-        "catl_retry_count": state["retry_count"] + 1,
+        "catl_result":        result,
+        "catl_retry_count":   state["retry_count"] + 1,
+        "collected_sources":  list(result.get("sources") or []),
     }
     assert_immutable_fields(update, "catl_agent_node")
     return update
@@ -243,17 +247,30 @@ def hitl_2_node(state: OrchestratorState) -> dict:
       {"decision": "approve"|"redo_skon"|"redo_catl"|"redo_both",
        "feedback": "<재조사 지시>"}  # redo 시에만 필요
     """
+    skon_retry = state.get("skon_retry_count", 0)
+    catl_retry = state.get("catl_retry_count", 0)
+
+    # SKON/CATL 모두 재시도 한도 도달 시 interrupt 없이 자동 승인
+    if skon_retry >= MAX_RETRIES and catl_retry >= MAX_RETRIES:
+        print(f"[hitl_2_node] SKON/CATL 모두 재시도 한도({MAX_RETRIES}) 도달 — 자동 승인")
+        return {
+            "review_2_decision": "approve",
+            "review_2_feedback": "",
+            "redo_targets":      [],
+        }
+
     skon = state.get("skon_result") or {}
     catl = state.get("catl_result") or {}
 
+    allowed = _allowed_decisions(state)
     resume_value = interrupt({
         "phase":    "review_2",
-        "skon":     _build_review_context(skon, state.get("skon_retry_count", 0)),
-        "catl":     _build_review_context(catl, state.get("catl_retry_count", 0)),
-        "allowed_decisions":   _allowed_decisions(state),
+        "skon":     _build_review_context(skon, skon_retry),
+        "catl":     _build_review_context(catl, catl_retry),
+        "allowed_decisions":   allowed,
         "retry_limits_reached": {
-            "skon": state.get("skon_retry_count", 0) >= MAX_RETRIES,
-            "catl": state.get("catl_retry_count", 0) >= MAX_RETRIES,
+            "skon": skon_retry >= MAX_RETRIES,
+            "catl": catl_retry >= MAX_RETRIES,
         },
     })
 

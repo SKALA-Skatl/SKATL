@@ -42,6 +42,7 @@ async def market_agent_node(state: Phase1State) -> dict:
     update = {
         "market_result": result,
         "retry_count": state.get("retry_count", 0) + 1,
+        "collected_sources": list(result.get("sources") or []),
     }
     if result.get("market_context"):
         update["market_context"] = result["market_context"]
@@ -52,13 +53,18 @@ async def market_agent_node(state: Phase1State) -> dict:
 def hitl_1_node(state: Phase1State) -> dict:
     """Pause for Human Review #1."""
 
+    # 재시도 한도 도달 시 interrupt 없이 자동 승인
+    if state.get("retry_count", 0) >= MAX_RETRIES:
+        print(f"[hitl_1_node] 재시도 한도({MAX_RETRIES}) 도달 — 자동 승인")
+        return {"review_1_decision": "approve", "review_1_feedback": ""}
+
     market_result = state.get("market_result", {})
     resume_value = interrupt(
         {
             "phase": "review_1",
             "market_result": _build_review_context(market_result, state.get("retry_count", 0)),
-            "allowed_decisions": _allowed_decisions(state),
-            "retry_limit_reached": state.get("retry_count", 0) >= MAX_RETRIES,
+            "allowed_decisions": ["approve", "redo"],
+            "retry_limit_reached": False,
         }
     )
 
@@ -199,10 +205,7 @@ def _build_review_context(market_result: dict, retry_count: int) -> dict:
 
 
 def _allowed_decisions(state: Phase1State) -> list[str]:
-    decisions = ["approve"]
-    if state.get("retry_count", 0) < MAX_RETRIES:
-        decisions.append("redo")
-    return decisions
+    return ["approve", "redo"]
 
 
 async def debug_interrupt_once(user_request: str) -> dict:

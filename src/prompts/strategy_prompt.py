@@ -73,6 +73,7 @@ def build_system_prompt(state: StrategyAgentInput) -> str:
             - retry_count    : 재조사 횟수
     """
     cfg      = COMPANY_PROMPTS[state["company"]]
+    user_request = state["user_request"]
     mc       = state["market_context"]
     feedback = state.get("review_feedback", "")
     retry    = state.get("retry_count", 0)
@@ -87,6 +88,14 @@ def build_system_prompt(state: StrategyAgentInput) -> str:
 ## 분석 목표
 Market Agent가 도출한 시장 데이터를 렌즈로 삼아, {cfg.company_name}의 전략을 다음 6개 축에서 분석하세요.
 각 축마다 원문 컨텍스트를 그대로 수집하고, 요약하지 마세요.
+
+## 사용자 요청
+{user_request}
+
+## 사용자 요청 반영 규칙
+- 사용자 요청은 기본 6개 분석 축을 바꾸는 명령이 아니라, 이번 분석에서 특히 더 자세히 봐야 할 강조 포인트입니다.
+- 예를 들어 시장, 규제, 원가, 점유율, 기술, ESS/HEV, 생산능력, 해외거점 관련 키워드가 있으면 해당 축에서 더 구체적으로 작성하세요.
+- 하지만 특정 키워드가 있더라도 나머지 축을 생략하지 말고, 6개 축을 모두 유지하세요.
 
 ## 시장 데이터 (분석 기준)
 
@@ -114,9 +123,50 @@ Market Agent가 도출한 시장 데이터를 렌즈로 삼아, {cfg.company_nam
 {json.dumps(mc['cost_competitiveness'], ensure_ascii=False, indent=2)}
 → 분석 과제: {cfg.cost_structure_task}
 
-## 도구 사용 우선순위
-1. **{cfg.rag_tool_hint}**
-2. RAG 결과가 부족하거나 최신 정보가 필요한 경우에만 **web_search로 보완**하세요.
+## 분석 깊이 기준 (반드시 준수)
+
+각 content 필드는 아래 4가지 요건을 **모두** 충족해야 합니다.
+
+**① 구체적 수치 2개 이상**
+- GWh·%·$/kWh·순위·억 원 등 실측 수치가 포함된 문장 최소 2개
+- ✗ 금지: "원가 경쟁력이 있다", "시장 점유율이 높다"
+- ✓ 필수: "2024년 글로벌 점유율 X%, 전년 대비 Y%p 변동"
+
+**② 고유 자산 1개 이상**
+- 공장명 / 프로그램명 / 고객사명 / JV명 / 제품 브랜드 중 최소 1개 명시
+- ✗ 금지: "북미에 생산거점이 있다"
+- ✓ 필수: "블루오벌SK(켄터키·테네시) X GWh"
+
+**③ 시장 데이터와의 명시적 대조**
+- 위에 주어진 시장 데이터 수치와 직접 비교하는 문장 최소 1개
+- ✗ 금지: "시장 성장에 따라 ESS 전략을 확대하고 있다"
+- ✓ 필수: "시장 ESS CAGR {'{'}ess_cagr{'}'} 대비 {cfg.company_name}의 ESS 수주 비중은 X%"
+
+**④ 전략 정합성 판단 1문장**
+- 시장 트렌드와 회사 전략이 정합(aligned)인지 불일치(misaligned)인지 명시
+- 불일치라면 어떤 리스크인지 구체화
+
+**셀프 체크 (제출 전)**
+- 이 content를 읽으면 {cfg.company_name}과 경쟁사를 구분할 수 있는 고유한 사실이 있는가?
+- 수치가 2개 이상인가?
+- "시장이 이러한데 이 회사는 구체적으로 어떻게 대응하고 있는가"에 답하고 있는가?
+
+## 도구 사용 규칙 (반드시 준수)
+
+각 축 작성 전에 아래 두 단계를 **순서대로 반드시 실행**하세요.
+
+**Step 1 — {cfg.rag_tool_hint}**
+- 내부 PDF 문서에서 해당 축 관련 수치, 전략, 실적을 찾습니다.
+
+**Step 2 — web_search 호출 (필수)**
+- 아래 6개 쿼리를 각각 호출해 최신 정보를 보완하세요:
+  1. `"{cfg.company_name} EV chasm response strategy 2024 2025 2026"`
+  2. `"{cfg.company_name} global market share battery ranking 2024 2025 2026"`
+  3. `"{cfg.company_name} LFP NCM battery technology portfolio 2024 2025 2026"`
+  4. `"{cfg.company_name} ESS HEV strategy diversification 2024 2025 2026"`
+  5. `"{cfg.company_name} IRA tariff regulatory risk 2024 2025 2026"`
+  6. `"{cfg.company_name} battery cost structure manufacturing 2024 2025 2026"`
+- web_search 결과는 반드시 `sources`에 `source_type: "web"`으로 추가하세요.
 
 ## 출력 형식
 분석이 완료되면 반드시 다음 JSON 형식으로 응답하세요.

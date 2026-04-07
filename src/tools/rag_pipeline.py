@@ -46,6 +46,7 @@ from logging_utils import get_logger
 
 
 logger = get_logger("rag_pipeline")
+_VECTORSTORE_LOCKS: dict[int, asyncio.Lock] = {}
 
 
 # ─────────────────────────────────────────────
@@ -123,6 +124,7 @@ class RAGPipeline:
         self.max_rewrites    = max_rewrites
         self.top_k           = top_k
         self.allowed_sources = get_allowed_sources(collection_name) if collection_name else set()
+        self._search_lock    = _get_vectorstore_lock(vectorstore)
 
         self._llm       = None
         self._llm_model = "gpt-4o-mini"
@@ -255,13 +257,14 @@ class RAGPipeline:
         L2 거리를 cosine similarity로 변환:
             cosine = 1 - l2² / 2
         """
-        loop = asyncio.get_event_loop()
-        fn = partial(
-            self.vectorstore.similarity_search_with_score,
-            query,
-            k=max(self.top_k * 8, 20),
-        )
-        results = await loop.run_in_executor(None, fn)
+        async with self._search_lock:
+            loop = asyncio.get_event_loop()
+            fn = partial(
+                self.vectorstore.similarity_search_with_score,
+                query,
+                k=max(self.top_k * 8, 20),
+            )
+            results = await loop.run_in_executor(None, fn)
 
         docs: list[RAGDocument] = []
         scores: list[float] = []
@@ -337,7 +340,7 @@ class RAGPipeline:
 
         try:
             start = response.content.find("{")
-            end   = response.content.rfind("}") + 1
+            end = response.content.rfind("}") + 1
             parsed = json.loads(response.content[start:end])
             return bool(parsed.get("sufficient", False)), str(parsed.get("new_query", "")).strip()
         except (json.JSONDecodeError, ValueError):
@@ -404,3 +407,14 @@ class RAGPipeline:
         if self._llm is None:
             self._llm = ChatOpenAI(model=self._llm_model, temperature=0)
         return self._llm
+
+
+def _get_vectorstore_lock(vectorstore: Any) -> asyncio.Lock:
+    """Return a shared async lock for one vectorstore instance."""
+
+    key = id(vectorstore)
+    lock = _VECTORSTORE_LOCKS.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _VECTORSTORE_LOCKS[key] = lock
+    return lock
