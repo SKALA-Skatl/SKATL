@@ -3,6 +3,7 @@ name = "skatl"
 version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
+    "camelot-py>=0.11.0",
     "faiss-cpu>=1.13.2",
     "langchain>=1.2.15",
     "langchain-community>=0.4.1",
@@ -10,6 +11,8 @@ dependencies = [
     "langchain-openai>=1.1.12",
     "langgraph>=1.1.6",
     "langsmith>=0.7.26",
+    "opencv-python-headless>=4.13.0.92",
+    "pdfplumber>=0.11.7",
     "pypdf>=6.9.2",
     "python-dotenv>=1.2.2",
     "sentence-transformers>=5.3.0",
