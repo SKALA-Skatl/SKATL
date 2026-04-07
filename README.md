@@ -2,15 +2,63 @@
 
 전기차 chasm 여파 속 SK On과 CATL의 포트폴리오 다각화 전략을 Multi-Agent 기반으로 비교 분석하고, 의사결정에 활용 가능한 전략 분석 보고서를 자동 생성하는 시스템
 
+## Quickstart
+
+### Requirements
+
+- Python 3.11+
+- (권장) `uv` 또는 `pip`
+
+### Install
+
+#### Option A) uv 사용 (권장)
+
+```bash
+uv sync
+```
+
+#### Option B) pip 사용
+
+```bash
+pip install -e .
+```
+
+### Configure environment variables
+
+```bash
+cp .env.example .env
+```
+
+`.env`에 아래 값을 설정합니다.
+
+- **필수**: `OPENAI_API_KEY`, `TAVILY_API_KEY`
+- **선택(로컬 임베딩/모델 다운로드에 필요할 수 있음)**: `HUGGINGFACEHUB_API_TOKEN`
+- **선택(트레이싱/관측성)**: `LANGCHAIN_API_KEY`, `LANGCHAIN_TRACING_V2`, `LANGCHAIN_ENDPOINT`, `LANGCHAIN_PROJECT`
+
+### Run
+
+```bash
+python app.py
+```
+
+### Test
+
+```bash
+pip install pytest pytest-asyncio
+pytest -v
+```
+
+> 참고: 현재 리포에는 `tests/` 디렉터리가 없어서, 위 명령은 “테스트 0개”로 종료될 수 있습니다. 테스트를 추가했다면 `pytest tests/ -v`처럼 경로를 지정해 실행하세요.
+
 ## Overview
 
 - **Objective** : 전기차 캐즘 장기화 환경에서 SK On(한국)과 CATL(중국)의 포트폴리오 다각화 전략을 객관적인 데이터 기반으로 비교 분석하여, 경영진·투자 의사결정자가 바로 활용 가능한 Comparative SWOT 전략 분석 보고서 생성
 - **Method** : Distributed + Central Orchestrator 패턴 기반 Multi-Agent 시스템. Market Agent가 시장 환경을 분석하고, Central Orchestrator가 SKON/CATL Strategy Agent를 병렬(Fan-out) 실행한 뒤 결과를 병합(Fan-in). 각 핵심 판단 구간에 Human Review를 삽입해 품질을 제어하며, Comparative SWOT Agent와 Report Agent가 최종 보고서를 생성
-- **Tools** : LangGraph, LangChain, OpenAI GPT-4o, FAISS, BAAI/bge-m3, Tavily Search, LangSmith
+- **Tools** : LangGraph, LangChain, OpenAI GPT-4o, GPT-4o-mini, FAISS, BAAI/bge-m3, Tavily Search, LangSmith
 
 ## Features
 
-- **Agentic RAG** : Market · SK On · CATL Agent 내부에 검색 → 관련성 평가 → 쿼리 재작성 루프 적용 (max_rewrites: 3). FAISS IndexFlatIP + bge-m3 임베딩 기반으로 공식 IR 자료·산업 리포트에서 원문 컨텍스트를 그대로 수집
+- **Agentic RAG** : Market · SKON Strategy · CATL Strategy Agent 내부에 검색 → 관련성 평가 → 쿼리 재작성 루프 적용 (max_rewrites: 3). FAISS IndexFlatIP + bge-m3 임베딩 기반으로 공식 IR 자료·산업 리포트에서 원문 컨텍스트를 그대로 수집
 - **병렬 전략 분석** : Central Orchestrator가 SKON/CATL Strategy Agent를 Fan-out으로 병렬 실행하고, Fan-in으로 결과 병합. 분석 품질 부족 시 해당 Agent만 선택적 재실행 (max_retry: 2)
 - **3단계 Human-in-the-Loop** : Review #1(시장 분석 후) · Review #2(전략 분석 후) · Review #3(보고서 생성 후). 각 단계에서 승인 또는 재조사 지시가 가능하며 LangGraph `interrupt()`로 구현
 - **근거 기반 분석** : 모든 분석 축(캐즘 대응, 시장 포지션, 기술 포트폴리오, ESS 전략, 규제 리스크, 원가 구조)에 출처 ID·URL·신뢰도 스코어를 함께 기록. 요약 없이 원문 컨텍스트를 그대로 보존
@@ -94,52 +142,71 @@
 ## Directory Structure
 
 ```
-Skatl/
+SKATL/
+├── data/
+│   ├── docs/
+│   ├── vectorstores/
+│   ├── analyst_report.pdf
+│   ├── catl.pdf
+│   ├── market_report.pdf
+│   ├── skon.pdf
+│   └── manifest.json
+├── docs/
+│   └── agentic_rag_handoff.md
+├── mock_data/
+│   ├── battery_market_background_payload.json
+│   ├── battery_reference_catalog.json
+│   ├── battery_strategy_catl_payload.json
+│   ├── battery_strategy_comparison_brief.json
+│   ├── battery_strategy_human_review_2.json
+│   ├── battery_strategy_human_review_3_approve_sample.json
+│   ├── battery_strategy_human_review_3_reject_sample.json
+│   └── battery_strategy_skon_payload.json
+├── notebooks/
+│   └── Battery-Comparative-SWOT-ReportAgent.py
+├── results/
+│   └── battery_market_strategy_report.json
 ├── src/
 │   ├── agents/
-│   │   └── strategy_agent.py       # SKON/CATL 공통 실행 템플릿
+│   │   ├── comparative_swot.py
+│   │   ├── market_agent.py
+│   │   ├── report_agent.py
+│   │   └── strategy_agent.py
+│   ├── phase1/
+│   │   └── market_phase.py
 │   ├── orchestrator/
 │   │   └── orchestrator.py         # Central Orchestrator 그래프
 │   ├── prompts/
-│   │   └── strategy_prompt.py      # 회사별 분석 과제 프롬프트
+│   │   ├── market_prompt.py
+│   │   └── strategy_prompt.py
+│   ├── rag/
+│   │   ├── collections.py
+│   │   ├── config.py
+│   │   ├── constants.py
+│   │   ├── pdf_ingest.py
+│   │   ├── source_metadata.py
+│   │   ├── table_backends.py
+│   │   └── vectorstore.py
 │   ├── schemas/
-│   │   ├── agent_io.py             # Agent 입출력 타입 정의
-│   │   ├── confidence.py           # 출처 신뢰도 평가
-│   │   ├── market_context.py       # MarketContext 스키마
-│   │   └── state.py                # OrchestratorState 정의
+│   │   ├── agent_io.py
+│   │   ├── confidence.py
+│   │   ├── market_agent_io.py
+│   │   ├── market_context.py
+│   │   ├── phase1_state.py
+│   │   └── state.py
 │   ├── tools/
 │   │   ├── rag_pipeline.py         # Agentic RAG (FAISS + 쿼리 재작성)
 │   │   ├── rag_tool.py             # LangChain @tool 래핑
 │   │   └── web_search_tool.py      # Tavily 웹 검색 도구
 │   └── logging_utils.py            # 구조화 로깅
-├── tests/
-│   ├── unit/                       # 모듈별 단위 테스트
-│   │   ├── schemas/
-│   │   ├── prompts/
-│   │   └── tools/
-│   └── integration/                # 그래프 전체 흐름 테스트
-│       └── test_orchestrator.py
 ├── app.py                          # 실행 진입점
 ├── pyproject.toml
+├── uv.lock
+├── .env.example
 └── README.md
 ```
 
-## Getting Started
-
-```bash
-# 의존성 설치
-pip install -e .
-
-# 환경변수 설정
-cp .env.example .env
-# .env에 OPENAI_API_KEY, TAVILY_API_KEY, FAISS 인덱스 경로 입력
-
-# 실행
-python app.py
-
-# 테스트
-pip install pytest pytest-asyncio
-pytest tests/ -v
-```
-
 ## Contributors
+- 서제임스 : 아키텍처 설계, Central Orchestrator, Strategy Agent, Agentic RAG
+- 이동민 : 아키텍처 설계, Comparative SWOT Agent, Report Agent
+- 장아현 : 아키텍처 설계, Market Agent, Agentic RAG, VectorDB 구축
